@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from launch import LaunchDescription
-from launch_ros.actions import Node, LifecycleNode
+from launch_ros.actions import Node
 from launch.substitutions import Command
 from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument
@@ -44,7 +44,7 @@ def generate_launch_description():
     sensors_config = os.path.join(
         get_package_share_directory('f1tenth_stack'),
         'config',
-        'ydlidar.yaml'
+        'sensors.yaml'
     )
     mux_config = os.path.join(
         get_package_share_directory('f1tenth_stack'),
@@ -107,15 +107,6 @@ def generate_launch_description():
         name='throttle_interpolator',
         parameters=[LaunchConfiguration('vesc_config')]
     )
-    ydlidar_node = LifecycleNode(
-        package='ydlidar_ros2_driver',
-        executable='ydlidar_ros2_driver_node',
-        name='ydlidar_ros2_driver_node',
-        output='screen',
-        emulate_tty=True,
-        parameters=[LaunchConfiguration('sensors_config')],
-        namespace='/'
-    )
     urg_node = Node(
         package='urg_node',
         executable='urg_node_driver',
@@ -143,8 +134,7 @@ def generate_launch_description():
     ld.add_action(vesc_to_odom_node)
     ld.add_action(vesc_driver_node)
     # ld.add_action(throttle_interpolator_node)
-    # ld.add_action(urg_node)
-    ld.add_action(ydlidar_node)
+    ld.add_action(urg_node)
     ld.add_action(ackermann_mux_node)
     ld.add_action(static_tf_node)
 
