@@ -21,14 +21,19 @@
 # SOFTWARE.
 
 from launch import LaunchDescription
-from launch_ros.actions import Node
-from launch.substitutions import Command
-from launch.substitutions import LaunchConfiguration
-from launch.actions import DeclareLaunchArgument
-from launch.actions import IncludeLaunchDescription
+from launch.substitutions import Command, LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.actions import (DeclareLaunchArgument, EmitEvent, RegisterEventHandler, IncludeLaunchDescription)
+from launch.event_handlers import OnProcessStart
+from launch.events import matches_action
+from launch_ros.actions import Node, LifecycleNode
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
+from lifecycle_msgs.msg import Transition
 from ament_index_python.packages import get_package_share_directory
 import os
+import yaml
 
 def generate_launch_description():
     joy_teleop_config = os.path.join(
@@ -51,6 +56,7 @@ def generate_launch_description():
         'config',
         'mux.yaml'
     )
+    
 
     joy_la = DeclareLaunchArgument(
         'joy_config',
@@ -68,8 +74,10 @@ def generate_launch_description():
         'mux_config',
         default_value=mux_config,
         description='Descriptions for ackermann mux configs')
+        
+    auto_la = DeclareLaunchArgument('auto_start', default_value='true')
 
-    ld = LaunchDescription([joy_la, vesc_la, sensors_la, mux_la])
+    ld = LaunchDescription([joy_la, vesc_la, sensors_la, mux_la, auto_la])
 
     joy_node = Node(
         package='joy',
@@ -113,6 +121,8 @@ def generate_launch_description():
         name='urg_node',
         parameters=[LaunchConfiguration('sensors_config')]
     )
+    
+    
     ackermann_mux_node = Node(
         package='ackermann_mux',
         executable='ackermann_mux',
@@ -126,6 +136,59 @@ def generate_launch_description():
         name='static_baselink_to_laser',
         arguments=['0.27', '0.0', '0.11', '0.0', '0.0', '0.0', 'base_link', 'laser']
     )
+    
+    # urg node 2
+    config_file_path = os.path.join(
+        get_package_share_directory('f1tenth_stack'),
+        'config',
+        'params_ether.yaml'
+    )
+    
+    with open(config_file_path, 'r') as file:
+        config_params = yaml.safe_load(file)['urg_node2']['ros__parameters']
+        
+    urg_node2 = LifecycleNode(
+        package='urg_node2',
+        executable='urg_node2_node',
+        name='urg_node2',
+        remappings=[('scan', 'scan')],
+        parameters=[config_params],
+        namespace='',
+        output='screen',
+    )
+    
+    urg_node2_node_configure_event_handler = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=urg_node2,
+            on_start=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=matches_action(urg_node2),
+                        transition_id=Transition.TRANSITION_CONFIGURE,
+                    ),
+                ),
+            ],
+        ),
+        condition=IfCondition(LaunchConfiguration('auto_start')),
+    )
+
+
+    urg_node2_node_activate_event_handler = RegisterEventHandler(
+        event_handler=OnStateTransition(
+            target_lifecycle_node=urg_node2,
+            start_state='configuring',
+            goal_state='inactive',
+            entities=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=matches_action(urg_node2),
+                        transition_id=Transition.TRANSITION_ACTIVATE,
+                    ),
+                ),
+            ],
+        ),
+        condition=IfCondition(LaunchConfiguration('auto_start')),
+    )
 
     # finalize
     ld.add_action(joy_node)
@@ -134,7 +197,10 @@ def generate_launch_description():
     ld.add_action(vesc_to_odom_node)
     ld.add_action(vesc_driver_node)
     # ld.add_action(throttle_interpolator_node)
-    ld.add_action(urg_node)
+    # ld.add_action(urg_node)
+    ld.add_action(urg_node2)
+    ld.add_action(urg_node2_node_configure_event_handler)
+    ld.add_action(urg_node2_node_activate_event_handler)
     ld.add_action(ackermann_mux_node)
     ld.add_action(static_tf_node)
 
